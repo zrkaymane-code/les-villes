@@ -8,7 +8,7 @@ app = Flask(__name__)
 # من الأفضل وضع المفتاح في Environment Variables على Render باسم GEMINI_API_KEY
 API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyBRWb1WjPZo-pVloT2JFZEmt1WNO_zIarg") 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash') # تم تصحيح الموديل إلى إصدار مدعوم
+model = genai.GenerativeModel('gemini-2.5-flash') # تم تصحيح الموديل إلى إصدار مدعوم
 
 # --- 2. إدارة ملف المدن cities.txt ---
 def load_cities_from_file():
@@ -112,3 +112,4 @@ if __name__ == '__main__':
     # Render يمرر المنفذ عبر متغير PORT، ويجب الاستماع على 0.0.0.0
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
