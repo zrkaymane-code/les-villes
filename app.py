@@ -1,77 +1,78 @@
 import os
-import requests
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, render_template_string, request, jsonify
+from poe_api_wrapper import PoeApi
 
 app = Flask(__name__)
 
-# --- الإعدادات (تأكد من وضع روابطك الصحيحة) ---
-ID_INSTANCE = "7107544473"
-API_TOKEN_INSTANCE = "c942533f2ff9410b973aea7c026a4e9c7d05bd55fb724619ba"
-POE_API_KEY = "FkYHHnuPGKZTbLGS4w8cNYgcfHbtFFdkWEeF8eyrxkw"
-GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbyuV_xRWtoDytI9n2bGCflu11B-2J52OPtuggRfjMRbkOGL_mxidtOkec9qZePAroJq/exec"
+# --- 1. إعداد الرموز (استخدام متغيرات البيئة للحماية) ---
+# ملاحظة: عند الرفع للمنصة، أضف POE_TOKEN في الإعدادات (Environment Variables)
+# أو استبدل os.environ.get بالقيمة مباشرة مؤقتاً
+POE_PB_TOKEN = os.environ.get("POE_TOKEN", "FkYHHnuPGKZTbLGS4w8cNYgcfHbtFFdkWEeF8eyrxkw==")
+BOT_NAME = "chinchilla" # يمكنك تغييره لـ gpt4_o أو claude_3_haiku
 
-# عداد الطلبيات (مؤقت في الذاكرة)
-order_count = 0
+# --- 2. إدارة ملف المدن cities.txt ---
+def load_cities_from_file():
+    filename = 'cities.txt'
+    # إنشاء الملف إذا لم يكن موجوداً (مهم للمنصات السحابية)
+    if not os.path.exists(filename):
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("casablanca\nrabat\nsale\nmeknes\nmarrakech\ntangier\nagadir")
+    
+    with open(filename, 'r', encoding='utf-8') as f:
+        return [line.strip().lower() for line in f.readlines() if line.strip()]
 
-# --- وظيفة تصحيح المدن عبر Poe ---
-def get_poe_correction(cities_list):
-    if not cities_list: return []
-    
-    # قراءة المدن المرجعية من ملفك
-    cities_db = ""
-    if os.path.exists('cities.txt'):
-        with open('cities.txt', 'r', encoding='utf-8') as f:
-            cities_db = f.read().replace('\n', ', ')
-    
-    cities_str = "\n".join(cities_list)
-    prompt = f"طابق هذه المدن بالقائمة: [{cities_db}]. أخرج مدينة واحدة لكل سطر فقط:\n{cities_str}"
-    
-    headers = {"Authorization": f"Bearer {POE_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "chinchilla", # أو gpt-3.5-turbo حسب المتاح بـ Poe
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    try:
-        response = requests.post("https://api.poe.com/v1/chat/completions", json=payload, headers=headers)
-        return [line.strip() for line in response.json()['choices'][0]['message']['content'].strip().split('\n') if line.strip()]
-    except:
-        return cities_list
-
-# --- واجهة الهوست (التصميم الأزرق الملكي) ---
+# --- 3. الواجهة (التصميم الأزرق الملكي SANDIZ AI) ---
 HTML_UI = """
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SANDIZ AI - Control Panel</title>
+    <title>SANDIZ AI - POE Version</title>
     <style>
-        body { background: radial-gradient(circle, #0f172a, #1e3a8a); color: white; font-family: sans-serif; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .card { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.2); border-radius: 30px; padding: 30px; width: 90%; max-width: 450px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
-        h1 { color: #60a5fa; font-size: 28px; }
-        .counter-box { background: rgba(0,0,0,0.3); padding: 20px; border-radius: 20px; margin: 20px 0; border: 1px solid #2563eb; }
-        .counter-number { font-size: 50px; font-weight: bold; color: #34d399; }
-        .btn { width: 100%; padding: 15px; border: none; border-radius: 15px; font-size: 18px; font-weight: bold; cursor: pointer; background: #2563eb; color: white; transition: 0.3s; }
-        .btn:active { transform: scale(0.95); }
-        .status { font-size: 14px; color: #94a3b8; margin-top: 15px; }
+        body { background: radial-gradient(circle, #1e3a8a, #0f172a); color: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .container { width: 95%; max-width: 1000px; background: rgba(255, 255, 255, 0.05); padding: 30px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(15px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        h1 { text-align: center; color: #60a5fa; margin-bottom: 20px; font-size: 2rem; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        label { display: block; margin-bottom: 10px; color: #94a3b8; font-weight: bold; }
+        textarea { width: 100%; height: 350px; background: rgba(0,0,0,0.3); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 15px; font-size: 14px; resize: none; box-sizing: border-box; outline: none; transition: border 0.3s; }
+        textarea:focus { border-color: #3b82f6; }
+        .btn-main { width: 100%; padding: 15px; background: linear-gradient(90deg, #2563eb, #1d4ed8); color: white; border: none; border-radius: 10px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 20px; transition: transform 0.2s; }
+        .btn-main:active { transform: scale(0.98); }
+        #status { display: none; text-align: center; color: #60a5fa; margin-top: 15px; font-weight: bold; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>🚀 SANDIZ HOST v12</h1>
-        <div class="counter-box">
-            <div style="font-size: 16px;">طلبيات اليوم</div>
-            <div class="counter-number" id="count">{{ count }}</div>
+    <div class="container">
+        <h1>🚀 SANDIZ AI - POE ENGINE</h1>
+        <div class="grid">
+            <div><label>📥 البيانات المدخلة:</label><textarea id="in" placeholder="أدخل الكلمات هنا..."></textarea></div>
+            <div><label>✨ النتائج المستخرجة:</label><textarea id="out" readonly placeholder="النتائج ستظهر هنا..."></textarea></div>
         </div>
-        <button class="btn" onclick="runFix()">⚡ تصحيح المدن (Poe AI)</button>
-        <div class="status" id="status">جاهز للاستقبال..</div>
+        <div id="status">🧠 يتم الآن التواصل مع ذكاء Poe...</div>
+        <button class="btn-main" onclick="run()">بدء التحليل الذكي ⚡</button>
     </div>
     <script>
-        async function runFix() {
-            document.getElementById('status').innerText = "⏳ جاري التصحيح...";
-            const res = await fetch('/manual_fix', {method: 'POST'});
-            document.getElementById('status').innerText = "✅ اكتمل التصحيح!";
-            setTimeout(() => { document.getElementById('status').innerText = "جاهز للاستقبال.."; }, 3000);
+        async function run() {
+            const input = document.getElementById('in').value;
+            if(!input.trim()) return;
+            document.getElementById('status').style.display = 'block';
+            document.getElementById('out').value = "";
+            try {
+                const res = await fetch('/ai_call', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: input})
+                });
+                const data = await res.json();
+                document.getElementById('out').value = data.result;
+            } catch (e) { 
+                alert("خطأ في الاتصال بالسيرفر"); 
+            } finally { 
+                document.getElementById('status').style.display = 'none'; 
+            }
         }
     </script>
 </body>
@@ -79,38 +80,38 @@ HTML_UI = """
 """
 
 @app.route('/')
-def index():
-    global order_count
-    return render_template_string(HTML_UI, count=order_count)
+def home():
+    return render_template_string(HTML_UI)
 
-@app.route('/manual_fix', methods=['POST'])
-def manual_fix():
-    res = requests.post(GOOGLE_SHEET_URL, json={"action": "get_cities"})
+@app.route('/ai_call', methods=['POST'])
+def ai_call():
+    user_input = request.json.get('text', '')
+    cities_db = load_cities_from_file()
+    ref_data = ", ".join(cities_db)
+
+    prompt = f"""
+    مهمتك: ربط المدخلات بالأسماء الموجودة في هذه القائمة حصراً: [{ref_data}]
+    التعليمات:
+    1. اختصارات (مثال: كازا -> casablanca).
+    2. ممنوع الحروف المشكلة (التزم بالحروف البسيطة).
+    3. إذا لم تجد صلة، اكتب "غير موجود".
+    4. النتيجة سطر بسطر فقط لكل مدخل.
+    المدخلات:
+    {user_input}
+    """
+    
     try:
-        all_rows = res.json()
-        cities_to_fix = [str(r[1]) for r in all_rows[1:] if len(r) > 1]
-        if cities_to_fix:
-            fixed_list = get_poe_correction(cities_to_fix)
-            requests.post(GOOGLE_SHEET_URL, json={"action": "update_fixed_cities", "fixed_list": fixed_list})
-            return jsonify({"status": "success"})
-    except: pass
-    return jsonify({"status": "error"})
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    global order_count
-    data = request.json
-    if data.get('typeWebhook') == 'incomingMessageReceived':
-        msg = data['messageData']['textMessageData']['textMessage']
-        if "Go" in msg or "go" in msg:
-            order_count += 1
-            clean = msg.replace("Go","").replace("go","").strip()
-            lines = [l.strip() for l in clean.split('\n') if l.strip()]
-            if len(lines) >= 4:
-                payload = {"action": "add_order", "name": lines[0], "city": lines[1], "address": lines[2], "phone": lines[3]}
-                requests.post(GOOGLE_SHEET_URL, json=payload)
-    return jsonify({"status": "success"}), 200
+        # الاتصال بـ Poe
+        client = PoeApi(POE_PB_TOKEN)
+        response_text = ""
+        # جلب الرد
+        for chunk in client.send_message(BOT_NAME, prompt):
+            response_text = chunk["response"]
+        return jsonify({"result": response_text.strip()})
+    except Exception as e:
+        return jsonify({"result": f"Error: {str(e)}"})
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
+    # إعداد المنفذ ليتوافق مع Render و Heroku
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
