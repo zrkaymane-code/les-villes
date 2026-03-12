@@ -1,4 +1,3 @@
 flask
-google-generativeai
-poe-api-wrapper
+openai
 gunicorn
